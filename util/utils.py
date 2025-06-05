@@ -44,6 +44,9 @@ import torchvision.transforms as T
 from util.box_annotator import BoxAnnotator 
 
 
+'''
+gpu사용 여부에 따라 적절한 모델을 불러온다
+'''
 def get_caption_model_processor(model_name, model_name_or_path="Salesforce/blip2-opt-2.7b", device=None):
     if not device:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -374,7 +377,13 @@ def predict(model, image, caption, box_threshold, text_threshold):
     boxes, logits, phrases = results["boxes"], results["scores"], results["labels"]
     return boxes, logits, phrases
 
+'''
+이미지를 인자로 주어진 모델이 분석하여 객체(버튼 아이콘등의 UI) 들의 위치 좌표를 반환한다.
 
+boxes: 객체 좌표
+conf: 신뢰도
+phrases: 객체의 라벨(인덱스나 번호)
+'''
 def predict_yolo(model, image, box_threshold, imgsz, scale_img, iou_threshold=0.7):
     """ Use huggingface model to replace the original model
     """
@@ -398,6 +407,9 @@ def predict_yolo(model, image, box_threshold, imgsz, scale_img, iou_threshold=0.
 
     return boxes, conf, phrases
 
+'''
+바운딩 박스 크기 계산
+'''
 def int_box_area(box, w, h):
     x1, y1, x2, y2 = box
     int_box = [int(x1*w), int(y1*h), int(x2*w), int(y2*h)]
@@ -419,6 +431,7 @@ def get_som_labeled_img(image_source: Union[str, Image.Image], model=None, BOX_T
     
     if isinstance(image_source, str):
         image_source = Image.open(image_source)
+        
     image_source = image_source.convert("RGB") # for CLIP
     w, h = image_source.size
     if not imgsz:
@@ -437,15 +450,33 @@ def get_som_labeled_img(image_source: Union[str, Image.Image], model=None, BOX_T
         print('no ocr bbox!!!')
         ocr_bbox = []
 
-    ocr_bbox_elem = [{'type': 'text', 'bbox':box, 'interactivity':False, 'content':txt, 'source': 'box_ocr_content_ocr'} for box, txt in zip(ocr_bbox, ocr_text) if int_box_area(box, w, h) > 0] 
-    xyxy_elem = [{'type': 'icon', 'bbox':box, 'interactivity':True, 'content':None} for box in xyxy.tolist() if int_box_area(box, w, h) > 0]
+    #ocr결과(텍스트 요소) 를 elem형태로 재구성
+    ocr_bbox_elem = [{
+        'type': 'text', 
+        'bbox':box, 
+        'interactivity':False, 
+        'content':txt, 
+        'source': 'box_ocr_content_ocr'} 
+            for box, txt in zip(ocr_bbox, ocr_text) if int_box_area(box, w, h) > 0
+        ] 
+    
+    #yolo에서 예측한 결과(아이콘같은 비텍스트 요소) 를 elem형태로 재구성
+    xyxy_elem = [{
+        'type': 'icon', 
+        'bbox':box, 
+        'interactivity':True, 
+        'content':None} 
+            for box in xyxy.tolist() if int_box_area(box, w, h) > 0
+        ]
     
     filtered_boxes_elem = ocr_bbox_elem + xyxy_elem
     
+    #겹치는 바운딩 박스 제거
     filtered_boxes = remove_overlap_new(boxes=xyxy_elem, iou_threshold=iou_threshold, ocr_bbox=ocr_bbox_elem)
     
     # sort the filtered_boxes so that the one with 'content': None is at the end, and get the index of the first 'content': None
     filtered_boxes_elem = sorted(filtered_boxes_elem, key=lambda x: x['content'] is None)
+    
     # get the index of the first 'content': None
     starting_idx = next((i for i, box in enumerate(filtered_boxes_elem) if box['content'] is None), -1)
     filtered_boxes = torch.tensor([box['bbox'] for box in filtered_boxes_elem])
@@ -453,7 +484,10 @@ def get_som_labeled_img(image_source: Union[str, Image.Image], model=None, BOX_T
 
     # get parsed icon local semantics
     time1 = time.time()
+    
+    #아이콘에 대한 정보를 추가한다. parsed_content_merged에 저장된다 
     if use_local_semantics:
+        #이미지 캡션하여 parsed_content_icon에 저장
         caption_model = caption_model_processor['model']
         if 'phi3_v' in caption_model.config.model_type: 
             parsed_content_icon = get_parsed_content_icon_phi3v(filtered_boxes, ocr_bbox, image_source, caption_model_processor)
@@ -462,6 +496,7 @@ def get_som_labeled_img(image_source: Union[str, Image.Image], model=None, BOX_T
         ocr_text = [f"Text Box ID {i}: {txt}" for i, txt in enumerate(ocr_text)]
         icon_start = len(ocr_text)
         parsed_content_icon_ls = []
+        
         # fill the filtered_boxes_elem None content with parsed_content_icon in order
         for i, box in enumerate(filtered_boxes_elem):
             if box['content'] is None:
@@ -510,6 +545,15 @@ def get_xywh_yolo(input):
     x, y, w, h = int(x), int(y), int(w), int(h)
     return x, y, w, h
 
+'''
+    UI의 좌표, 즉 바운딩 박스가 그려질 좌표가 저장된 배열을 저장한다.
+    
+    image_np(PIL로 만들어진 이미지 소스 배열) 으로 paddle_ocr.ocr()를 호출하여 이미지에서 텍스트를 인식한다.
+    이때 반환되는 배열에는 바운딩 박스의 좌표, 텍스트, 신뢰도이다.
+    text_threshold(임계값) 보다 낮은 점수의 텍스트는 필터링하여 저장한다.
+    
+    openCV를 사용하여 이미지에 바운딩 박스를 그린다. 이는 display_img인자로 여부를 결정할 수 있다.
+'''
 def check_ocr_box(image_source: Union[str, Image.Image], display_img = True, output_bb_format='xywh', goal_filtering=None, easyocr_args=None, use_paddleocr=False):
     if isinstance(image_source, str):
         image_source = Image.open(image_source)
@@ -518,20 +562,22 @@ def check_ocr_box(image_source: Union[str, Image.Image], display_img = True, out
         image_source = image_source.convert('RGB')
     image_np = np.array(image_source)
     w, h = image_source.size
+    
     if use_paddleocr:
         if easyocr_args is None:
             text_threshold = 0.5
         else:
             text_threshold = easyocr_args['text_threshold']
         result = paddle_ocr.ocr(image_np, cls=False)[0]
-        coord = [item[0] for item in result if item[1][1] > text_threshold]
-        text = [item[1][0] for item in result if item[1][1] > text_threshold]
+        coord = [item[0] for item in result if item[1][1] > text_threshold]         #객체 좌표
+        text = [item[1][0] for item in result if item[1][1] > text_threshold]       #객체 텍스트
     else:  # EasyOCR
         if easyocr_args is None:
             easyocr_args = {}
         result = reader.readtext(image_np, **easyocr_args)
         coord = [item[0] for item in result]
         text = [item[1] for item in result]
+        
     if display_img:
         opencv_img = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
         bb = []
@@ -546,4 +592,5 @@ def check_ocr_box(image_source: Union[str, Image.Image], display_img = True, out
             bb = [get_xywh(item) for item in coord]
         elif output_bb_format == 'xyxy':
             bb = [get_xyxy(item) for item in coord]
+            
     return (text, bb), goal_filtering
