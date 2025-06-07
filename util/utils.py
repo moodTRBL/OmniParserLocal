@@ -28,6 +28,7 @@ paddle_ocr = PaddleOCR(
     #max_batch_size=1024,
     #use_dilation=True,  # improves accuracy
     #det_db_score_mode='slow',  # improves accuracy
+    rec_algorithm='SVTR_LCNet',
     rec_batch_num=1024)
 import time
 import base64
