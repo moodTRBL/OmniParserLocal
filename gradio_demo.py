@@ -39,7 +39,7 @@ def process(
     iou_threshold,
     use_paddleocr,
     imgsz
-) -> Optional[Image.Image]:
+) -> str:
 
     box_overlay_ratio = image_input.size[0] / 3200
     draw_bbox_config = {
@@ -48,22 +48,24 @@ def process(
         'text_padding': max(int(3 * box_overlay_ratio), 1),
         'thickness': max(int(3 * box_overlay_ratio), 1),
     }
-    # import pdb; pdb.set_trace()
 
     ocr_bbox_rslt, is_goal_filtered = check_ocr_box(image_input, display_img = False, output_bb_format='xyxy', goal_filtering=None, easyocr_args={'paragraph': False, 'text_threshold':0.9}, use_paddleocr=use_paddleocr)
     text, ocr_bbox = ocr_bbox_rslt
     dino_labled_img, label_coordinates, parsed_content_list = get_som_labeled_img(image_input, yolo_model, BOX_TRESHOLD = box_threshold, output_coord_in_ratio=True, ocr_bbox=ocr_bbox,draw_bbox_config=draw_bbox_config, caption_model_processor=caption_model_processor, ocr_text=text,iou_threshold=iou_threshold, imgsz=imgsz,)  
-    image = Image.open(io.BytesIO(base64.b64decode(dino_labled_img)))
     print('finish processing')
     
     w, h = image_input.size
     ui_list = get_clickable_ui(parsed_content_list, image_input, w, h, yolo_model, box_threshold, draw_bbox_config, caption_model_processor, iou_threshold, use_paddleocr, imgsz)
+    
+    # UI 요소 정보를 텍스트로 변환
+    ui_text = "Clickable UI Elements:\n"
     for key, value in ui_list:
-         print(f'{key}: {value}')
+        ui_text += f"{key}: {value}\n"
     
-    parsed_content_list = '\n'.join([f'icon {i}: ' + str(v) for i,v in enumerate(parsed_content_list)])
+    # 전체 파싱 결과를 텍스트로 변환
+    parsed_content_text = '\n'.join([f'icon {i}: ' + str(v) for i,v in enumerate(parsed_content_list)])
     
-    return image, str(parsed_content_list)
+    return f"{ui_text}\n\nAll Parsed Elements:\n{parsed_content_text}"
     
 
 #상호작용 가능한 UI만 추출
@@ -120,9 +122,6 @@ def get_clickable_ui(parsed_content_list, image_source, w, h, yolo_model, box_th
                 iou_threshold=iou_threshold, 
                 imgsz=imgsz
             )
-            
-            # image = Image.open(io.BytesIO(base64.b64decode(dino_labled_img)))
-            # image.save(r"C:\Users\hachi\PythonProjects\file-save\icon.png")
         
             text_list_second = [(value['bbox'], value['content']) for value in parsed_content_list_second if value['type'] == 'text' and value['interactivity'] == False]
             print(text_list_second)
@@ -141,10 +140,8 @@ with gr.Blocks() as demo:
         with gr.Column():
             image_input_component = gr.Image(
                 type='pil', label='Upload image')
-            # set the threshold for removing the bounding boxes with low confidence, default is 0.05
             box_threshold_component = gr.Slider(
                 label='Box Threshold', minimum=0.01, maximum=1.0, step=0.01, value=0.05)
-            # set the threshold for removing the bounding boxes with large overlap, default is 0.1
             iou_threshold_component = gr.Slider(
                 label='IOU Threshold', minimum=0.01, maximum=1.0, step=0.01, value=0.1)
             use_paddleocr_component = gr.Checkbox(
@@ -154,8 +151,7 @@ with gr.Blocks() as demo:
             submit_button_component = gr.Button(
                 value='Submit', variant='primary')
         with gr.Column():
-            image_output_component = gr.Image(type='pil', label='Image Output')
-            text_output_component = gr.Textbox(label='Parsed screen elements', placeholder='Text Output')
+            text_output_component = gr.Textbox(label='Parsed screen elements', placeholder='Text Output', lines=20)
 
     submit_button_component.click(
         fn=process,
@@ -166,7 +162,7 @@ with gr.Blocks() as demo:
             use_paddleocr_component,
             imgsz_component
         ],
-        outputs=[image_output_component, text_output_component]
+        outputs=[text_output_component]
     )
 
 # demo.launch(debug=False, show_error=True, share=True)
