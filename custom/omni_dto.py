@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any
 
-@dataclass
+@dataclass(frozen=True)
 class Cordinate:
     min_x: float
     min_y: float
@@ -17,6 +17,13 @@ class Cordinate:
                 self.max_x > other.max_x and 
                 self.max_y > other.max_y)
         
+    def equals(self, other: 'Cordinate') -> bool:
+        """
+        동일 좌표인지 확인
+        """
+        return (self.min_x == other.min_x and self.min_y == other.min_y and 
+                self.max_x == other.max_x and self.max_y == other.max_y)
+        
     def to_pixel_coordinates(self, width: int, height: int) -> Tuple[int, int, int, int]:
         """
         비율 좌표를 픽셀 좌표로 변환
@@ -30,6 +37,9 @@ class Cordinate:
     
 @dataclass
 class UIElement:
+    """
+    OmniParser가 반환하는 주요 메타데이터들이다.
+    """
     content: str
     bbox: Cordinate
     element_type: str
