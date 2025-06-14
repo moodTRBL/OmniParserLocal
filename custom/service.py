@@ -3,7 +3,7 @@ from PIL import Image
 import logging
 from collections import defaultdict
 
-from custom.omni_dto import Cordinate, UIElement, ParseConfig
+from custom.dto import Cordinate, ParseConfig, OmniElement, UIElement
 from util.utils import check_ocr_box, get_som_labeled_img
 
 logger = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ class UIExtractor:
         self.image_parser = image_parser
         self.image_utils = image_utils
     
-    def _parse_ui_elements(self, parsed_content_list: List[Dict[str, Any]]) -> Tuple[List[UIElement], List[UIElement]]:
+    def _parse_ui_elements(self, parsed_content_list: List[Dict[str, Any]]) -> Tuple[List[OmniElement], List[OmniElement]]:
         """
         파싱된 콘텐츠에서 아이콘과 텍스트 요소를 분리
         """
@@ -107,7 +107,7 @@ class UIExtractor:
         
         for item in parsed_content_list:
             bbox = Cordinate(*item['bbox'])
-            element = UIElement(
+            element = OmniElement(
                 content=item['content'],
                 bbox=bbox,
                 element_type=item['type'],
@@ -121,7 +121,7 @@ class UIExtractor:
         
         return icons, texts
     
-    def _combine_ui_list(self, content_list: List[Tuple[str, Cordinate]]) -> dict:
+    def _combine_ui_list(self, content_list: List[Tuple[str, Cordinate]]) -> list[UIElement]:
         """
         같은 좌표의 텍스트를 하나의 UI로 구성
         """
@@ -135,9 +135,24 @@ class UIExtractor:
                 if cord1.equals(cord2):
                     ui_list[cord1].append(text2)
         
-        return ui_list    
+        ui_elements = []
+        for cord, contents in ui_list.items():
+            ui_elements.append(UIElement(cord, contents))
+        
+        return ui_elements    
+    
+    def _remove_duplicate(self, content_list: list[UIElement]) -> list[UIElement]:
+        """
+        value에 중복되는 텍스트를 제거
+        """
+        for ui_element in content_list:
+            set_list = set(ui_element.contents)
+            remove_list = list(set_list)
+            ui_element.contents = remove_list
+
+        return content_list
             
-    def get_clickable_ui(self, image_source: Image.Image, width: int, height: int, yolo_model, draw_bbox_config, caption_model_processor, config: ParseConfig) -> dict:
+    def get_clickable_ui(self, image_source: Image.Image, width: int, height: int, yolo_model, draw_bbox_config, caption_model_processor, config: ParseConfig) -> list[UIElement]:
         """
         클릭 가능한 UI 요소들을 추출
         """ 
@@ -152,7 +167,7 @@ class UIExtractor:
         
         icons, texts = self._parse_ui_elements(parsed_content_list)
         ui_elements = []
-        clickable_ui = defaultdict(list)
+        #clickable_ui = defaultdict(list)
         
         for icon in icons:
             # 아이콘 내부의 텍스트 찾기
@@ -196,5 +211,6 @@ class UIExtractor:
                     ui_elements.append((text, icon.bbox))
         
         clickable_ui = self._combine_ui_list(ui_elements)
+        clickable_ui = self._remove_duplicate(clickable_ui)
         
         return clickable_ui

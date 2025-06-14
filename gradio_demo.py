@@ -14,7 +14,7 @@ from PIL import Image
 import json
 
 from custom.service import UIExtractor, ImageParser, ImageUtils
-from custom.omni_dto import ParseConfig
+from custom.dto import ParseConfig
 
 yolo_model = get_yolo_model(model_path='weights/icon_detect/model.pt')
 caption_model_processor = get_caption_model_processor(model_name="florence2", model_name_or_path="weights/icon_caption_florence")
@@ -78,8 +78,8 @@ def process(
         config=config
     )
     ui_text = ""
-    for key, value in clickable_ui.items():
-        ui_text += f"{key}: {value}\n"
+    for ele in clickable_ui:
+        ui_text += f"{ele.bbox}: {ele.contents}\n"
     
     return ui_text
 

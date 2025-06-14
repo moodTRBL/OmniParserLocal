@@ -36,7 +36,7 @@ class Cordinate:
         )
     
 @dataclass
-class UIElement:
+class OmniElement:
     """
     OmniParser가 반환하는 주요 메타데이터들이다.
     """
@@ -52,3 +52,8 @@ class ParseConfig:
     use_paddleocr: bool
     imgsz: int
     min_icon_size: int = 200
+
+@dataclass
+class UIElement:
+    bbox: Cordinate
+    contents: list
